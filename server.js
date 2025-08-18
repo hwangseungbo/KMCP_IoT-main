@@ -39,21 +39,6 @@ let clients = [];
 //JSON형태 데이터 자동으로 파싱
 app.use(express.json());
 
-//passport 라이브러리 setting
-app.use(passport.initialize());
-app.use(
-  session({
-    secret: process.env.PASS_SEC, //세션의 document id는 암호화해서 유저에게 보냄
-    resave: false, //유저가 서버로 요청할 때마다 세션 갱신할지 여부
-    saveUninitialized: false, //로그인 안해도 세션을 만들것인지 여부
-    cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 },
-    store: MongoStore.create({
-      mongoUrl: process.env.DB_URL,
-      dbName: "KMCP_IoT",
-    }),
-  })
-);
-
 // RTSP 스트림을 WebSocket으로 전송하는 함수
 let streams = [
   {
@@ -120,8 +105,6 @@ streams.forEach((stream) => {
 app.get("/streams", (req, res) => {
   res.json(streams);
 });
-
-app.use(passport.session());
 
 // method-override 사용을 위한
 app.use(methodOverride("_method"));
@@ -242,27 +225,6 @@ passport.deserializeUser(async (user, done) => {
   });
 });
 
-// Login API  username, password 라는 네임속성으로 ID와 비번을 전달받아야함
-app.post("/api/login", async (req, res, next) => {
-  passport.authenticate("local", (error, user, info) => {
-    if (error) return res.status(500).json(error);
-    if (!user) return res.status(401).json(info.message);
-    req.logIn(user, (err) => {
-      if (err) return next(err);
-      res.send("로그인이 완료되었습니다");
-    });
-  })(req, res, next);
-});
-
-function checkLogin(req, res, next) {
-  if (!req.user) {
-    res.send("로그인이 필요합니다");
-  }
-  next();
-}
-
-//app.use(checkLogin); // 이 코드 밑으로 작성된 API들은 모두 checkLofw
-
 // Data API
 app.use("/test", require("./routes/datas.js"));
 
@@ -288,12 +250,6 @@ app.use("/api/ships", require("./routes/ships.js"));
 app.get("*", (req, res) => {
   res.redirect("/");
 });
-
-//백엔드 서버 시작
-// const backEndPort = process.env.Backend_Port;
-// app.listen(backEndPort, "0.0.0.0", () => {
-//   console.log(`백엔드서버가 http://localhost:${backEndPort}에서 실행중입니다.`);
-// });
 
 //소켓IO 클라이언트가 연결시 실행
 io.on("connect", (socket) => {
