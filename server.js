@@ -29,8 +29,14 @@ const io = socketIO(server, {
 });
 
 const corsOptions = {
-  origin: "*",
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173", 
+    "https://iot-client-iota.vercel.app",
+    "https://kmcp-io-t-main.vercel.app"
+  ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true
 };
 
 app.use(cors(corsOptions));
@@ -52,15 +58,18 @@ function startStream(wsServer, rtspUrl) {
   // Railway 환경에서는 FFmpeg가 없을 수 있으므로 체크
   try {
     // FFmpeg 설치 확인
-    const { execSync } = require('child_process');
+    const { execSync } = require("child_process");
     try {
-      execSync('ffmpeg -version', { stdio: 'ignore' });
-      console.log('FFmpeg is available, starting RTSP stream...');
+      execSync("ffmpeg -version", { stdio: "ignore" });
+      console.log("FFmpeg is available, starting RTSP stream...");
     } catch (ffmpegCheckError) {
-      console.log('FFmpeg not found, skipping RTSP stream:', ffmpegCheckError.message);
+      console.log(
+        "FFmpeg not found, skipping RTSP stream:",
+        ffmpegCheckError.message
+      );
       return;
     }
-    
+
     ffmpeg = spawn("ffmpeg", [
       "-i",
       rtspUrl, // 입력: RTSP 스트림 URL
