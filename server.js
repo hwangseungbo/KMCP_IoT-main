@@ -248,7 +248,7 @@ app.use("/api/ships", require("./routes/ships.js"));
 
 // ETC... ALL
 app.get("*", (req, res) => {
-  res.redirect("/");
+  res.status(404).send("페이지를 찾을 수 없습니다");
 });
 
 //소켓IO 클라이언트가 연결시 실행
@@ -270,8 +270,17 @@ io.on("connect", (socket) => {
   });
 });
 
-//소켓IO 서버 시작
-const socketIOPort = process.env.Soket_IO_Port;
-server.listen(socketIOPort, () => {
-  console.log(`소켓서버가 http://localhost:${socketIOPort}에서 실행중입니다.`);
-});
+// Vercel 환경에서는 서버를 직접 시작하지 않음
+// Vercel이 자동으로 서버를 시작함
+if (process.env.NODE_ENV !== "production") {
+  // 로컬 개발 환경에서만 서버 시작
+  const socketIOPort = process.env.Soket_IO_Port || 3000;
+  server.listen(socketIOPort, () => {
+    console.log(
+      `소켓서버가 http://localhost:${socketIOPort}에서 실행중입니다.`
+    );
+  });
+}
+
+// Vercel을 위한 export
+module.exports = app;
