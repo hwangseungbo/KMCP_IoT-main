@@ -270,17 +270,11 @@ io.on("connect", (socket) => {
   });
 });
 
-// Vercel 환경에서는 서버를 직접 시작하지 않음
-// Vercel이 자동으로 서버를 시작함
-if (process.env.NODE_ENV !== "production") {
-  // 로컬 개발 환경에서만 서버 시작
-  const socketIOPort = process.env.Soket_IO_Port || 3000;
-  server.listen(socketIOPort, () => {
-    console.log(
-      `소켓서버가 http://localhost:${socketIOPort}에서 실행중입니다.`
-    );
-  });
-}
+// Railway 또는 로컬 환경에서 서버 시작
+const PORT = process.env.PORT || process.env.Soket_IO_Port || 3000;
+server.listen(PORT, () => {
+  console.log(`서버가 http://localhost:${PORT}에서 실행중입니다.`);
+});
 
-// Vercel을 위한 export
+// Vercel을 위한 export (하위 호환성)
 module.exports = app;
