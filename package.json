@@ -4,7 +4,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "postinstall": "apt-get update -y && apt-get install -y ffmpeg || echo 'FFmpeg installation failed, continuing...'"
   },
   "keywords": [],
   "author": "",

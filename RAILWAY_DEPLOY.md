@@ -11,12 +11,6 @@
 ## 3. 환경 변수 설정
 Railway 대시보드에서 다음 환경 변수들을 설정:
 
-```
-NODE_ENV=production
-PORT=3000
-Soket_IO_Port=3000
-```
-
 ## 4. 배포 자동화
 - GitHub에 푸시하면 자동으로 배포됨
 - `railway.json` 설정에 따라 `npm start` 명령어로 서버 시작
