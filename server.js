@@ -171,8 +171,6 @@ function startRtspToMjpeg(rtspUrl, user, pass) {
   const args = [
     "-rtsp_transport",
     "tcp", // NAT/방화벽 환경에서 안정
-    "-stimeout",
-    "15000000", // 15s (μs)
     "-rw_timeout",
     "15000000", // 15s
     "-probesize",
