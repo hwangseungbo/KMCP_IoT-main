@@ -218,10 +218,45 @@ wss.on("connection", () => {
 
 // ─────────────────────────────────────────────────────────────
 // 7) 서버 시작: Railway는 단일 PORT만 사용
+// const PORT = process.env.PORT || 3000;
+// server.listen(PORT, "0.0.0.0", () => {
+//   console.log(`HTTP/WS 서버가 0.0.0.0:${PORT} 에서 실행 중입니다.`);
+//   if (!process.env.RTSP_URL) {
+//     console.warn(
+//       "⚠️  RTSP_URL 미설정: 스트리밍 비활성화 (env에 RTSP_URL/RTSP_USER/RTSP_PASS 설정 권장)."
+//     );
+//   }
+// });
+
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`HTTP/WS 서버가 0.0.0.0:${PORT} 에서 실행 중입니다.`);
-  if (!process.env.RTSP_URL) {
+
+  // 1) 원시 env 그대로 확인
+  console.log("[ENV CHECK/raw] CWD=", process.cwd());
+  console.log(
+    "[ENV CHECK/raw] RTSP_URL=",
+    JSON.stringify(process.env.RTSP_URL)
+  );
+  console.log(
+    "[ENV CHECK/raw] RTSP_USER/PASS len=",
+    (process.env.RTSP_USER || "").length,
+    (process.env.RTSP_PASS || "").length
+  );
+
+  // 2) 공백/개행 제거하여 캐싱
+  const RTSP_URL = (process.env.RTSP_URL || "").trim();
+  const RTSP_USER = (process.env.RTSP_USER || "").trim();
+  const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
+
+  console.log("[ENV CHECK/trim] RTSP_URL len=", RTSP_URL.length);
+  console.log(
+    "[ENV CHECK/trim] RTSP_USER/PASS len=",
+    RTSP_USER.length,
+    RTSP_PASS.length
+  );
+
+  if (!RTSP_URL) {
     console.warn(
       "⚠️  RTSP_URL 미설정: 스트리밍 비활성화 (env에 RTSP_URL/RTSP_USER/RTSP_PASS 설정 권장)."
     );
