@@ -150,7 +150,7 @@ try {
 
 // ── ENV 캐시 ─────────────────────────────────────────────
 const RTSP_HOST = (process.env.RTSP_HOST || "223.171.72.233").trim();
-const RTSP_PORT = (process.env.RTSP_PORT || "8554").trim();
+const RTSP_PORT = (process.env.RTSP_PORT || "10554").trim();
 const RTSP_PATH = (process.env.RTSP_PATH || "/profile2/media.smp").trim();
 const RTSP_USER = (process.env.RTSP_USER || "").trim();
 const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
