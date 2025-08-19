@@ -31,12 +31,12 @@ const io = socketIO(server, {
 const corsOptions = {
   origin: [
     "http://localhost:3000",
-    "http://localhost:5173", 
+    "http://localhost:5173",
     "https://iot-client-iota.vercel.app",
-    "https://kmcp-io-t-main.vercel.app"
+    "https://kmcp-io-t-main.vercel.app",
   ],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  credentials: true
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
@@ -49,8 +49,8 @@ app.use(express.json());
 let streams = [
   {
     name: "cam_1",
-    port: 9999,
-    url: "rtsp://admin:kmcp123!@192.168.0.101/profile2/media.smp",
+    port: process.env.PORT,
+    url: "rtsp://admin:kmcp123!@223.171.72.233:8554/profile2/media.smp",
   },
 ];
 
