@@ -147,41 +147,45 @@ try {
 
 // ─────────────────────────────────────────────────────────────
 // 6) FFmpeg → WS 브로드캐스트 (단일 프로세스, 첫 접속 시 기동)
-let ff = null;
 
+// 0) env 캐싱
+const RTSP_HOST = (process.env.RTSP_HOST || "223.171.72.233").trim();
+const RTSP_PORT = (process.env.RTSP_PORT || "8554").trim();
+const RTSP_PATH = (process.env.RTSP_PATH || "/profile2/media.smp").trim();
+const RTSP_USER = (process.env.RTSP_USER || "").trim();
+const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
+
+// 1) 베이스 URL을 "문자열 더하기"가 아니라 URL 객체로!
 function buildRtspUrlWithAuthAndTimeout(
-  baseUrl,
+  host,
+  port,
+  path,
   user,
   pass,
   timeoutUs = 15000000
 ) {
-  const u = new URL(baseUrl);
+  // path 앞의 / 보정
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  const u = new URL(`rtsp://${host}:${port}${cleanPath}`);
   if (user) u.username = encodeURIComponent(user);
   if (pass) u.password = encodeURIComponent(pass);
   if (!u.searchParams.has("timeout"))
     u.searchParams.set("timeout", String(timeoutUs));
-  return u.toString();
+  return u.toString(); // 여기서 ! → %21 로 인코딩된 문자열이 반환됨
 }
 
-const RTSP_URL = (process.env.RTSP_URL || "").trim();
-const RTSP_USER = (process.env.RTSP_USER || "").trim();
-const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
+let ff = null;
 
-const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
-  "rtsp://223.171.72.233:8554/profile2/media.smp",
-  process.env.RTSP_USER,
-  process.env.RTSP_PASS
-);
-// ffmpeg -i 에 urlWithAuth 전달
-
-function startRtspToMjpeg() {
-  const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
-    RTSP_URL,
+function startRtspToMjpeg(wss) {
+  const finalRtsp = buildRtspUrlWithAuthAndTimeout(
+    RTSP_HOST,
+    RTSP_PORT,
+    RTSP_PATH,
     RTSP_USER,
     RTSP_PASS
   );
-  console.log("[CHECK] Final RTSP URL passed to ffmpeg =", urlWithAuth); // 여기서 반드시 ...%21 로 보여야 정상
-
+  console.log("[CHECK] Final RTSP URL passed to ffmpeg =", finalRtsp);
+  // 반드시 finalRtsp만 사용! (아래 -i 에도)
   const args = [
     "-rtsp_transport",
     "tcp",
@@ -190,7 +194,7 @@ function startRtspToMjpeg() {
     "-analyzeduration",
     "10M",
     "-i",
-    urlWithAuth,
+    finalRtsp,
     "-fflags",
     "nobuffer",
     "-flags",
@@ -207,12 +211,33 @@ function startRtspToMjpeg() {
     "pipe:1",
   ];
   console.log("FFmpeg args:", args.join(" "));
+
+  const { spawn, execSync } = require("child_process");
+  try {
+    execSync("ffmpeg -version", { stdio: "ignore" });
+  } catch {
+    console.log("FFmpeg not installed");
+    return;
+  }
+
   const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
-  // ...
+  proc.stdout.on("data", (chunk) => {
+    wss.clients.forEach((c) => {
+      if (c.readyState === 1) c.send(chunk);
+    });
+  });
+  proc.stderr.on("data", (d) => console.error("FFmpeg:", d.toString()));
+  proc.on("close", (code) => {
+    console.log("FFmpeg exited:", code);
+    ff = null;
+  });
+
+  return proc;
 }
 
+// 첫 WebSocket 클라이언트가 연결될 때 한 번만 시작되도록 가드
 wss.on("connection", () => {
-  if (!ff && RTSP_URL) ff = startRtspToMjpeg(RTSP_URL, RTSP_USER, RTSP_PASS);
+  if (!ff) ff = startRtspToMjpeg(wss);
 });
 
 // ─────────────────────────────────────────────────────────────
