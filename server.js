@@ -1,307 +1,231 @@
+// server.js
 require("dotenv").config();
 
 const express = require("express");
-const app = express();
+const http = require("http");
 const cors = require("cors");
-const { MongoClient, ObjectId } = require("mongodb");
 const methodOverride = require("method-override");
+const { MongoClient, ObjectId } = require("mongodb");
 const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local");
 const bcrypt = require("bcrypt");
-// session 데이터를 DB에 저장을 위해 connect-mongo 설치
 const MongoStore = require("connect-mongo");
-//RTSP 스트림 관련
-const Stream = require("node-rtsp-stream");
-const { spawn } = require("child_process");
-//socket.io
-const http = require("http");
-const socketIO = require("socket.io");
 const WebSocket = require("ws");
+const { spawn, execSync } = require("child_process");
+
+const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ port: 3007 });
-const io = socketIO(server, {
-  cors: {
-    origin: "*",
+
+// ─────────────────────────────────────────────────────────────
+// 1) CORS (필요한 출처만 허용; 공개 API면 origin: '*' 로 단순화 가능)
+app.use(
+  cors({
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://iot-client-iota.vercel.app",
+      "https://kmcp-io-t-main.vercel.app",
+    ],
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    // credentials: true,
-  },
-});
-
-const corsOptions = {
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://iot-client-iota.vercel.app",
-    "https://kmcp-io-t-main.vercel.app",
-  ],
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  credentials: true,
-};
-
-app.use(cors(corsOptions));
-
-let clients = [];
-//JSON형태 데이터 자동으로 파싱
-app.use(express.json());
-
-// RTSP 스트림을 WebSocket으로 전송하는 함수
-let streams = [
-  {
-    name: "cam_1",
-    port: 9999,
-    url: "rtsp://admin:kmcp123!@223.171.72.233:8554/profile2/media.smp",
-  },
-];
-
-function startStream(wsServer, rtspUrl) {
-  // Railway 환경에서는 FFmpeg가 없을 수 있으므로 체크
-  try {
-    // FFmpeg 설치 확인
-    const { execSync } = require("child_process");
-    try {
-      execSync("ffmpeg -version", { stdio: "ignore" });
-      console.log("FFmpeg is available, starting RTSP stream...");
-    } catch (ffmpegCheckError) {
-      console.log(
-        "FFmpeg not found, skipping RTSP stream:",
-        ffmpegCheckError.message
-      );
-      return;
-    }
-
-    ffmpeg = spawn("ffmpeg", [
-      "-i",
-      rtspUrl, // 입력: RTSP 스트림 URL
-      //'-probesize', '32',                 // 스트림 분석에 사용하는 데이터의 양을 32바이트로 제한하여 초기 지연 감소
-      //'-analyzeduration', '0',            // 분석 시간을 0으로 설정하여 스트림 연결 속도 향상
-      "-f",
-      "mjpeg", // 출력 포맷: MJPEG (각 프레임을 JPEG 이미지로 변환)
-      "-q:v",
-      "15", // 비디오 품질 설정 (값이 낮을수록 화질이 높음; 5는 중간 화질)
-      "-r",
-      "2", // 초당 프레임 수 (10fps로 설정하여 네트워크 사용량 절약)
-      "-vf",
-      "scale=320:180", // 비디오 필터: 해상도 변경
-      "-timeout",
-      "5000000", // 타임아웃 설정: 5초 동안 응답이 없을 경우 스트림을 중단
-      "-reconnect",
-      "1", // 연결 실패 시 자동 재연결 활성화
-      "-reconnect_streamed",
-      "1", // 실시간 스트림 재연결 허용
-      "-reconnect_delay_max",
-      "2", // 최대 재연결 지연 시간: 2초
-      "-an", // 오디오 제거 (오디오가 필요하지 않을 때 자원 사용 절약)
-      "pipe:1", // 파이프 출력: FFmpeg 출력을 파이프로 전달
-    ]);
-
-    ffmpeg.stdout.on("data", (data) => {
-      wsServer.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-          client.send(data);
-        }
-      });
-    });
-
-    ffmpeg.stderr.on("data", (data) => {
-      console.error(`FFmpeg stderr: ${data}`);
-    });
-
-    ffmpeg.on("close", (code) => {
-      console.log(`FFmpeg process exited with code ${code}`);
-    });
-
-    wsServer.on("close", () => {
-      ffmpeg.kill("SIGINT");
-    });
-  } catch (error) {
-    console.log(
-      "FFmpeg not available, RTSP streaming disabled:",
-      error.message
-    );
-  }
-}
-
-streams.forEach((stream) => {
-  const wsServer = new WebSocket.Server({ port: stream.port });
-  startStream(wsServer, stream.url);
-  console.log(`Started ${stream.name} on port ${stream.port}`);
-});
-
-// 스트림 URL 목록을 제공하는 엔드포인트를 추가합니다.
-app.get("/streams", (req, res) => {
-  res.json(streams);
-});
-
-// method-override 사용을 위한
-app.use(methodOverride("_method"));
-
-// post 요청시 담긴내용을 req.body 를 통해 출력하는데 이를 쉽게 이용하기위한 추가구문
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-let connectDB = require("./database.js");
-
-let db;
-// MongoDB 연결
-connectDB
-  .then((client) => {
-    console.log("mongoDB의 KMCP_IoT 데이터베이스에 연결되었습니다.");
-    db = client.db("KMCP_IoT");
-
-    // // Express 서버 시작
-    // app.listen(process.env.Backend_Port, "0.0.0.0", () => {
-    //   console.log(
-    //     `${process.env.Backend_Port}번 포트를 모든 인터페이스에서 수신합니다.`
-    //   );
-    // });
-
-    //웹소켓 클라이언트가 연결시 실행
-    wss.on("connection", (ws) => {
-      console.log("새로운 웹소켓 클라이언트가 연결되었습니다.");
-
-      //데이터 수신시
-      ws.on("message", async (message) => {
-        try {
-          // message를 파싱하고 현재 시각을 추가
-          let parsedMessage = JSON.parse(message);
-
-          // 현재 시각에 9시간 추가
-          let now = new Date();
-          now.setTime(now.getTime() + 9 * 60 * 60 * 1000); // 9시간 추가
-          parsedMessage.createdAt = now;
-
-          // DB에 삽입
-          await db.collection("logs").insertOne(parsedMessage);
-
-          // 응답
-          let today = new Date();
-          console.log(today.toLocaleString());
-          ws.send(
-            `${today.toLocaleString()} 서버에서 정상적으로 데이터를 수신했습니다.`
-          );
-        } catch (err) {
-          console.error("웹소켓 메시지 처리 중 오류 발생: ", err);
-        }
-      });
-
-      //클라이언트 연결종료시
-      ws.on("close", () => {
-        console.log("클라이언트의 연결이 종료되었습니다.");
-      });
-
-      //에러 발생시
-      ws.on("error", (error) => {
-        console.error("웹소켓 에러 : ", error);
-      });
-    });
-
-    //웹소켓 서버 시작
-    const wssPort = process.env.Web_Socket_Port;
-    console.log(`웹소켓 서버가 ws:192.168.0.8:${wssPort}에서 실행중입니다.`);
-  })
-  .catch((err) => {
-    console.log(err);
-  });
-
-const lightsRouter = require("./routes/lights.js")(wss);
-
-app.use("/light", lightsRouter);
-
-// API
-app.get("/", (req, res) => {
-  res.send("서버열림");
-});
-
-passport.use(
-  new LocalStrategy(async (입력한아이디, 입력한비번, cb) => {
-    try {
-      let result = await db
-        .collection("businesses")
-        .findOne({ username: 입력한아이디 });
-      if (!result) {
-        return cb(null, false, { message: "아이디가 존재하지 않습니다" });
-      }
-
-      if (await bcrypt.compare(입력한비번, result.password)) {
-        return cb(null, result);
-      } else {
-        return cb(null, false, { message: "비밀번호가 일치하지 않습니다" });
-      }
-    } catch (err) {
-      console.log(err);
-    }
+    credentials: true, // 세션/쿠키 기반이면 true 유지, 아니면 제거 가능
   })
 );
 
-passport.serializeUser((user, done) => {
-  //console.log(user);  //로긍인중인 유저정보 확인
-  process.nextTick(() => {
-    done(null, { id: user._id, username: user.username });
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(methodOverride("_method"));
+
+// ─────────────────────────────────────────────────────────────
+// 2) 세션/패스포트 (필요 없으면 이 블록 통째로 제거 가능)
+if (process.env.DB_URL && process.env.PASS_SEC) {
+  app.use(
+    session({
+      secret: process.env.PASS_SEC,
+      resave: false,
+      saveUninitialized: false,
+      cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 },
+      store: MongoStore.create({
+        mongoUrl: process.env.DB_URL,
+        dbName: "KMCP_IoT",
+      }),
+    })
+  );
+  app.use(passport.initialize());
+  app.use(passport.session());
+}
+
+// ─────────────────────────────────────────────────────────────
+// 3) DB 연결 (서버는 항상 뜨고, DB는 비동기로 연결)
+let db;
+const connectDB = require("./database.js"); // 기존 프로젝트의 Promise<Client> 반환 구조 유지
+
+connectDB
+  .then((client) => {
+    db = client.db("KMCP_IoT");
+    console.log("mongoDB의 KMCP_IoT 데이터베이스에 연결되었습니다.");
+
+    // DB 준비 후에 로컬전략 연결 (db 참조 필요)
+    passport.use(
+      new LocalStrategy(async (username, password, cb) => {
+        try {
+          const user = await db.collection("businesses").findOne({ username });
+          if (!user)
+            return cb(null, false, { message: "아이디가 존재하지 않습니다" });
+          const ok = await bcrypt.compare(password, user.password);
+          return ok
+            ? cb(null, user)
+            : cb(null, false, { message: "비밀번호가 일치하지 않습니다" });
+        } catch (err) {
+          return cb(err);
+        }
+      })
+    );
+
+    passport.serializeUser((user, done) => {
+      process.nextTick(() =>
+        done(null, { id: user._id, username: user.username })
+      );
+    });
+
+    passport.deserializeUser(async (user, done) => {
+      try {
+        const found = await db
+          .collection("businesses")
+          .findOne({ _id: new ObjectId(user.id) });
+        if (found) delete found.password;
+        process.nextTick(() => done(null, found));
+      } catch (err) {
+        done(err);
+      }
+    });
+  })
+  .catch((err) => {
+    console.error("Mongo 연결 실패:", err);
   });
-});
 
-// deserializeUser 함수의 경우 세션정보가 적힌 쿠키를 갖고있는 유저가 요청을 날릴 때 마다 실행됨
-passport.deserializeUser(async (user, done) => {
-  let result = await db
-    .collection("businesses")
-    .findOne({ _id: new ObjectId(user.id) });
-  delete result.password;
-  process.nextTick(() => {
-    done(null, result);
+// ─────────────────────────────────────────────────────────────
+// 4) 라우트 (헬스체크 포함)
+app.get("/health", (_, res) => res.status(200).send("OK"));
+app.get("/", (_, res) => res.send("서버열림"));
+
+// 기존 라우터들
+try {
+  app.use("/test", require("./routes/datas.js"));
+} catch {}
+try {
+  app.use("/api/operators", require("./routes/operators.js"));
+} catch {}
+try {
+  app.use("/api/owners", require("./routes/owners.js"));
+} catch {}
+try {
+  app.use(
+    "/api/ships/:shipId/reservations",
+    require("./routes/reservations.js")
+  );
+} catch {}
+try {
+  app.use("/api/ships/:shipId/scheduling", require("./routes/schedules.js"));
+} catch {}
+try {
+  app.use("/api/ships", require("./routes/ships.js"));
+} catch {}
+
+// 404
+app.get("*", (_, res) => res.status(404).send("페이지를 찾을 수 없습니다"));
+
+// ─────────────────────────────────────────────────────────────
+// 5) WebSocket: “같은 포트” + “경로로 구분” (별도 포트 절대 열지 않음)
+const wss = new WebSocket.Server({ server, path: "/ws/mjpeg" });
+
+// lights 라우터가 wss를 필요로 한다면, factory 패턴 유지
+try {
+  const lightsRouterFactory = require("./routes/lights.js");
+  app.use("/light", lightsRouterFactory(wss));
+} catch {}
+
+// ─────────────────────────────────────────────────────────────
+// 6) FFmpeg → WS 브로드캐스트 (단일 프로세스, 첫 접속 시 기동)
+let ff = null;
+
+function startRtspToMjpeg(rtspUrl) {
+  // ffmpeg 설치 확인 (Railway Nixpacks에 ffmpeg 추가 필요)
+  try {
+    execSync("ffmpeg -version", { stdio: "ignore" });
+  } catch {
+    console.log("FFmpeg 미설치: 스트리밍 비활성화");
+    return null;
+  }
+
+  // B안: 안정화 옵션 + 인증을 옵션으로 (URL에 비번 X)
+  const args = [
+    "-rtsp_transport",
+    "tcp", // NAT/방화벽 환경에서 안정적
+    ...(process.env.RTSP_USER ? ["-rtsp_user", process.env.RTSP_USER] : []),
+    ...(process.env.RTSP_PASS ? ["-rtsp_password", process.env.RTSP_PASS] : []),
+    "-stimeout",
+    "15000000", // 15s (μs)
+    "-rw_timeout",
+    "15000000", // 15s
+    "-probesize",
+    "10M", // 초기 파싱 여유
+    "-analyzeduration",
+    "10M",
+    "-i",
+    rtspUrl,
+    "-fflags",
+    "nobuffer", // 지연 최소화
+    "-flags",
+    "low_delay",
+    "-f",
+    "mjpeg",
+    "-q:v",
+    "10",
+    "-r",
+    "2",
+    "-vf",
+    "scale=640:360",
+    "-an",
+    "pipe:1",
+  ];
+
+  console.log("FFmpeg args:", args.join(" "));
+  const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
+
+  proc.stdout.on("data", (chunk) => {
+    wss.clients.forEach((c) => {
+      if (c.readyState === WebSocket.OPEN) c.send(chunk);
+    });
   });
-});
 
-// Data API
-app.use("/test", require("./routes/datas.js"));
+  proc.stderr.on("data", (d) => console.error("FFmpeg:", d.toString()));
 
-// Light API
-app.use("/light", require("./routes/lights.js"));
-
-// OPERATOR API
-app.use("/api/operators", require("./routes/operators.js"));
-
-// OWNER API
-app.use("/api/owners", require("./routes/owners.js"));
-
-// RESERVATION API
-app.use("/api/ships/:shipId/reservations", require("./routes/reservations.js"));
-
-// SCHEDULE API
-app.use("/api/ships/:shipId/scheduling", require("./routes/schedules.js"));
-
-// SHIP API
-app.use("/api/ships", require("./routes/ships.js"));
-
-// ETC... ALL
-app.get("*", (req, res) => {
-  res.status(404).send("페이지를 찾을 수 없습니다");
-});
-
-//소켓IO 클라이언트가 연결시 실행
-io.on("connect", (socket) => {
-  console.log("새로운 소켓IO 클라이언트가 연결되었습니다. ", socket.id);
-
-  clients.push(socket);
-
-  //데이터 수신시
-  socket.on("data", (data) => {
-    console.log("data Received: ", data);
+  proc.on("close", (code) => {
+    console.log("FFmpeg exited:", code);
+    ff = null; // 필요 시 재기동 로직(지수 백오프 등) 추가 가능
   });
 
-  //연결이 끊어졌을 때
-  socket.on("disconnect", () => {
-    console.log("클라이언트의 연결이 해제되었습니다.");
+  return proc;
+}
 
-    clients = clients.filter((client) => client !== socket);
-  });
+// 첫 WS 클라이언트가 붙을 때만 ffmpeg 기동(불필요한 외부 트래픽 방지)
+wss.on("connection", () => {
+  if (!ff && process.env.RTSP_URL) {
+    ff = startRtspToMjpeg(process.env.RTSP_URL);
+  }
 });
 
-// Railway 또는 로컬 환경에서 서버 시작
-const PORT = process.env.PORT || process.env.Soket_IO_Port || 3000;
-server.listen(PORT, () => {
-  console.log(`서버가 http://localhost:${PORT}에서 실행중입니다.`);
+// ─────────────────────────────────────────────────────────────
+// 7) 서버 시작: Railway는 단일 PORT만 사용
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, "0.0.0.0", () => {
+  console.log(`HTTP/WS 서버가 0.0.0.0:${PORT} 에서 실행 중입니다.`);
+  if (!process.env.RTSP_URL) {
+    console.warn(
+      "⚠️  RTSP_URL 미설정: 스트리밍 비활성화 (env에 RTSP_URL/RTSP_USER/RTSP_PASS 설정 권장)."
+    );
+  }
 });
 
-// Vercel을 위한 export (하위 호환성)
 module.exports = app;
