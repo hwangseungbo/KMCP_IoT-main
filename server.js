@@ -255,12 +255,6 @@ wss.on("connection", () => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`HTTP/WS 서버가 0.0.0.0:${PORT} 에서 실행 중입니다.`);
-
-  if (!RTSP_URL) {
-    console.warn(
-      "⚠️  RTSP_URL 미설정: 스트리밍 비활성화 (env에 RTSP_URL/RTSP_USER/RTSP_PASS 설정 권장)."
-    );
-  }
 });
 
 module.exports = app;
