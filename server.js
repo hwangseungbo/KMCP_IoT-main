@@ -210,6 +210,7 @@ function startRtspToMjpeg(wss) {
   ];
   console.log("FFmpeg args:", args.join(" "));
   const { spawn, execSync } = require("child_process");
+
   try {
     execSync("ffmpeg -version", { stdio: "ignore" });
   } catch {
@@ -231,22 +232,67 @@ function startRtspToMjpeg(wss) {
   return proc;
 }
 
+//ffprobe로 자동 경로 스캔(원클릭 진단)
+const { exec } = require("child_process");
+
+async function tryProbe(url) {
+  return new Promise((resolve) => {
+    exec(
+      `ffprobe -rtsp_transport tcp -v error -select_streams v:0 -show_streams -of json "${url}"`,
+      { timeout: 8000 },
+      (err, stdout) => {
+        if (err) return resolve({ ok: false, err: err.message });
+        try {
+          const j = JSON.parse(stdout || "{}");
+          if (j.streams && j.streams.length)
+            return resolve({ ok: true, info: j.streams[0] });
+        } catch (_) {}
+        resolve({ ok: false, err: "no streams" });
+      }
+    );
+  });
+}
+
+async function autoDiscoverRtsp(host, port, user, pass, paths) {
+  for (const p of paths) {
+    const base = new URL(
+      `rtsp://${host}:${port}${p.startsWith("/") ? p : `/${p}`}`
+    );
+    if (user) base.username = encodeURIComponent(user);
+    if (pass) base.password = encodeURIComponent(pass);
+    base.searchParams.set("timeout", "15000000");
+    const url = base.toString();
+    const r = await tryProbe(url);
+    console.log("[PROBE]", p, r.ok ? "OK" : `FAIL: ${r.err}`);
+    if (r.ok) return url;
+  }
+  return null;
+}
+
+// 사용 예 (서버 시작 시 1회 실행)
+(async () => {
+  const paths = [
+    "/profile1/media.smp",
+    "/profile2/media.smp",
+    "/onvif-media/media.amp",
+    "/Streaming/Channels/101",
+    "/h264/ch1/main/av_stream",
+    "/h264",
+  ];
+  const found = await autoDiscoverRtsp(
+    process.env.RTSP_HOST,
+    process.env.RTSP_PORT,
+    process.env.RTSP_USER,
+    process.env.RTSP_PASS,
+    paths
+  );
+  console.log("[PROBE] FOUND =", found);
+})();
+
 // 첫 연결 때만 ffmpeg 기동
 wss.on("connection", () => {
   if (!ff) ff = startRtspToMjpeg(wss);
 });
-
-// ─────────────────────────────────────────────────────────────
-// 7) 서버 시작: Railway는 단일 PORT만 사용
-// const PORT = process.env.PORT || 3000;
-// server.listen(PORT, "0.0.0.0", () => {
-//   console.log(`HTTP/WS 서버가 0.0.0.0:${PORT} 에서 실행 중입니다.`);
-//   if (!process.env.RTSP_URL) {
-//     console.warn(
-//       "⚠️  RTSP_URL 미설정: 스트리밍 비활성화 (env에 RTSP_URL/RTSP_USER/RTSP_PASS 설정 권장)."
-//     );
-//   }
-// });
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
