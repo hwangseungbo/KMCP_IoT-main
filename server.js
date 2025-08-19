@@ -149,12 +149,12 @@ connectDB
     console.log("mongoDB의 KMCP_IoT 데이터베이스에 연결되었습니다.");
     db = client.db("KMCP_IoT");
 
-    // Express 서버 시작
-    app.listen(process.env.Backend_Port, "0.0.0.0", () => {
-      console.log(
-        `${process.env.Backend_Port}번 포트를 모든 인터페이스에서 수신합니다.`
-      );
-    });
+    // // Express 서버 시작
+    // app.listen(process.env.Backend_Port, "0.0.0.0", () => {
+    //   console.log(
+    //     `${process.env.Backend_Port}번 포트를 모든 인터페이스에서 수신합니다.`
+    //   );
+    // });
 
     //웹소켓 클라이언트가 연결시 실행
     wss.on("connection", (ws) => {
