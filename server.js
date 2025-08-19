@@ -163,6 +163,10 @@ function buildRtspUrlWithAuthAndTimeout(
   return u.toString();
 }
 
+const RTSP_URL = (process.env.RTSP_URL || "").trim();
+const RTSP_USER = (process.env.RTSP_USER || "").trim();
+const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
+
 const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
   "rtsp://223.171.72.233:8554/profile2/media.smp",
   process.env.RTSP_USER,
@@ -170,29 +174,17 @@ const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
 );
 // ffmpeg -i 에 urlWithAuth 전달
 
-function startRtspToMjpeg(rtspUrl, user, pass) {
-  try {
-    execSync("ffmpeg -version", { stdio: "ignore" });
-  } catch {
-    console.log("FFmpeg 미설치: 스트리밍 비활성화");
-    return null;
-  }
-
-  // 15초 연결 타임아웃을 URL로 전달
+function startRtspToMjpeg() {
   const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
-    rtspUrl,
-    user,
-    pass,
-    15000000
+    RTSP_URL,
+    RTSP_USER,
+    RTSP_PASS
   );
+  console.log("[CHECK] Final RTSP URL passed to ffmpeg =", urlWithAuth); // 여기서 반드시 ...%21 로 보여야 정상
 
   const args = [
     "-rtsp_transport",
     "tcp",
-    // ↓ 문제 옵션들 제거
-    // '-rw_timeout','15000000',
-    // '-stimeout','15000000',
-    // ↑ 위 둘은 빌드/프로토콜에 따라 미지원. URL ?timeout 으로 대체
     "-probesize",
     "10M",
     "-analyzeduration",
@@ -214,28 +206,10 @@ function startRtspToMjpeg(rtspUrl, user, pass) {
     "-an",
     "pipe:1",
   ];
-
   console.log("FFmpeg args:", args.join(" "));
   const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
-
-  proc.stdout.on("data", (chunk) => {
-    wss.clients.forEach((c) => {
-      if (c.readyState === WebSocket.OPEN) c.send(chunk);
-    });
-  });
-  proc.stderr.on("data", (d) => console.error("FFmpeg:", d.toString()));
-  proc.on("close", (code) => {
-    console.log("FFmpeg exited:", code);
-    ff = null;
-  });
-
-  return proc;
+  // ...
 }
-
-// 호출부(캐시 변수 사용)
-const RTSP_URL = (process.env.RTSP_URL || "").trim();
-const RTSP_USER = (process.env.RTSP_USER || "").trim();
-const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
 
 wss.on("connection", () => {
   if (!ff && RTSP_URL) ff = startRtspToMjpeg(RTSP_URL, RTSP_USER, RTSP_PASS);
