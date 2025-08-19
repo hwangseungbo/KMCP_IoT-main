@@ -49,7 +49,7 @@ app.use(express.json());
 let streams = [
   {
     name: "cam_1",
-    port: process.env.PORT,
+    port: 9999,
     url: "rtsp://admin:kmcp123!@223.171.72.233:8554/profile2/media.smp",
   },
 ];
