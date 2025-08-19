@@ -149,18 +149,26 @@ try {
 // 6) FFmpeg → WS 브로드캐스트 (단일 프로세스, 첫 접속 시 기동)
 let ff = null;
 
-function buildRtspUrlWithAuthAndTimeout(baseUrl, user, pass, timeoutUs) {
+function buildRtspUrlWithAuthAndTimeout(
+  baseUrl,
+  user,
+  pass,
+  timeoutUs = 15000000
+) {
   const u = new URL(baseUrl);
   if (user) u.username = encodeURIComponent(user);
   if (pass) u.password = encodeURIComponent(pass);
-  if (timeoutUs) {
-    // 이미 timeout이 없다면 추가
-    if (!u.searchParams.has("timeout")) {
-      u.searchParams.set("timeout", String(timeoutUs));
-    }
-  }
+  if (!u.searchParams.has("timeout"))
+    u.searchParams.set("timeout", String(timeoutUs));
   return u.toString();
 }
+
+const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
+  "rtsp://223.171.72.233:8554/profile2/media.smp",
+  process.env.RTSP_USER,
+  process.env.RTSP_PASS
+);
+// ffmpeg -i 에 urlWithAuth 전달
 
 function startRtspToMjpeg(rtspUrl, user, pass) {
   try {
