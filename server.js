@@ -148,14 +148,14 @@ try {
 // ─────────────────────────────────────────────────────────────
 // 6) FFmpeg → WS 브로드캐스트 (단일 프로세스, 첫 접속 시 기동)
 
-// 0) env 캐싱
+// ── ENV 캐시 ─────────────────────────────────────────────
 const RTSP_HOST = (process.env.RTSP_HOST || "223.171.72.233").trim();
 const RTSP_PORT = (process.env.RTSP_PORT || "8554").trim();
 const RTSP_PATH = (process.env.RTSP_PATH || "/profile2/media.smp").trim();
 const RTSP_USER = (process.env.RTSP_USER || "").trim();
 const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
 
-// 1) 베이스 URL을 "문자열 더하기"가 아니라 URL 객체로!
+// ── URL 생성(인증+timeout) ──────────────────────────────
 function buildRtspUrlWithAuthAndTimeout(
   host,
   port,
@@ -164,18 +164,16 @@ function buildRtspUrlWithAuthAndTimeout(
   pass,
   timeoutUs = 15000000
 ) {
-  // path 앞의 / 보정
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   const u = new URL(`rtsp://${host}:${port}${cleanPath}`);
   if (user) u.username = encodeURIComponent(user);
   if (pass) u.password = encodeURIComponent(pass);
   if (!u.searchParams.has("timeout"))
     u.searchParams.set("timeout", String(timeoutUs));
-  return u.toString(); // 여기서 ! → %21 로 인코딩된 문자열이 반환됨
+  return u.toString(); // <- 여기서 ! 가 %21 로 변환됨
 }
 
 let ff = null;
-
 function startRtspToMjpeg(wss) {
   const finalRtsp = buildRtspUrlWithAuthAndTimeout(
     RTSP_HOST,
@@ -184,8 +182,8 @@ function startRtspToMjpeg(wss) {
     RTSP_USER,
     RTSP_PASS
   );
-  console.log("[CHECK] Final RTSP URL passed to ffmpeg =", finalRtsp);
-  // 반드시 finalRtsp만 사용! (아래 -i 에도)
+  console.log("[CHECK] Final RTSP URL passed to ffmpeg =", finalRtsp); // 반드시 %21 이 보여야 함
+
   const args = [
     "-rtsp_transport",
     "tcp",
@@ -194,7 +192,7 @@ function startRtspToMjpeg(wss) {
     "-analyzeduration",
     "10M",
     "-i",
-    finalRtsp,
+    finalRtsp, // 오직 finalRtsp 만 사용!
     "-fflags",
     "nobuffer",
     "-flags",
@@ -211,7 +209,6 @@ function startRtspToMjpeg(wss) {
     "pipe:1",
   ];
   console.log("FFmpeg args:", args.join(" "));
-
   const { spawn, execSync } = require("child_process");
   try {
     execSync("ffmpeg -version", { stdio: "ignore" });
@@ -231,11 +228,10 @@ function startRtspToMjpeg(wss) {
     console.log("FFmpeg exited:", code);
     ff = null;
   });
-
   return proc;
 }
 
-// 첫 WebSocket 클라이언트가 연결될 때 한 번만 시작되도록 가드
+// 첫 연결 때만 ffmpeg 기동
 wss.on("connection", () => {
   if (!ff) ff = startRtspToMjpeg(wss);
 });
