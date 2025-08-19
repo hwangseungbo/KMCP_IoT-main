@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+  <body>
+    <h3>MJPEG Test</h3>
+    <img id="frame" />
+    <script>
+      const ws = new WebSocket("wss://kmcpiot-main-production.up.railway.app/ws/mjpeg");
+      ws.binaryType = "arraybuffer";
+      ws.onmessage = (ev) => {
+        const blob = new Blob([ev.data], { type: "image/jpeg" });
+        const url = URL.createObjectURL(blob);
+        const img = document.getElementById("frame");
+        const old = img.src;
+        img.src = url;
+        if (old) URL.revokeObjectURL(old);
+      };
+    </script>
+  </body>
+</html>

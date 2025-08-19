@@ -149,8 +149,16 @@ try {
 // 6) FFmpeg → WS 브로드캐스트 (단일 프로세스, 첫 접속 시 기동)
 let ff = null;
 
-function startRtspToMjpeg(rtspUrl) {
-  // ffmpeg 설치 확인 (Railway Nixpacks에 ffmpeg 추가 필요)
+function buildRtspUrlWithAuth(baseUrl, user, pass) {
+  if (!user || !pass) return baseUrl;
+  const u = new URL(baseUrl);
+  // 비밀번호 등 특수문자 안전 처리
+  u.username = encodeURIComponent(user);
+  u.password = encodeURIComponent(pass);
+  return u.toString();
+}
+
+function startRtspToMjpeg(rtspUrl, user, pass) {
   try {
     execSync("ffmpeg -version", { stdio: "ignore" });
   } catch {
@@ -158,24 +166,23 @@ function startRtspToMjpeg(rtspUrl) {
     return null;
   }
 
-  // B안: 안정화 옵션 + 인증을 옵션으로 (URL에 비번 X)
+  const urlWithAuth = buildRtspUrlWithAuth(rtspUrl, user, pass);
+
   const args = [
     "-rtsp_transport",
-    "tcp", // NAT/방화벽 환경에서 안정적
-    ...(process.env.RTSP_USER ? ["-rtsp_user", process.env.RTSP_USER] : []),
-    ...(process.env.RTSP_PASS ? ["-rtsp_password", process.env.RTSP_PASS] : []),
+    "tcp", // NAT/방화벽 환경에서 안정
     "-stimeout",
     "15000000", // 15s (μs)
     "-rw_timeout",
     "15000000", // 15s
     "-probesize",
-    "10M", // 초기 파싱 여유
+    "10M",
     "-analyzeduration",
     "10M",
     "-i",
-    rtspUrl,
+    urlWithAuth,
     "-fflags",
-    "nobuffer", // 지연 최소화
+    "nobuffer",
     "-flags",
     "low_delay",
     "-f",
@@ -192,28 +199,27 @@ function startRtspToMjpeg(rtspUrl) {
 
   console.log("FFmpeg args:", args.join(" "));
   const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
-
   proc.stdout.on("data", (chunk) => {
     wss.clients.forEach((c) => {
       if (c.readyState === WebSocket.OPEN) c.send(chunk);
     });
   });
-
   proc.stderr.on("data", (d) => console.error("FFmpeg:", d.toString()));
-
   proc.on("close", (code) => {
     console.log("FFmpeg exited:", code);
-    ff = null; // 필요 시 재기동 로직(지수 백오프 등) 추가 가능
+    ff = null;
   });
 
   return proc;
 }
 
-// 첫 WS 클라이언트가 붙을 때만 ffmpeg 기동(불필요한 외부 트래픽 방지)
+// 호출부도 캐시변수로 전달
+const RTSP_URL = (process.env.RTSP_URL || "").trim();
+const RTSP_USER = (process.env.RTSP_USER || "").trim();
+const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
+
 wss.on("connection", () => {
-  if (!ff && process.env.RTSP_URL) {
-    ff = startRtspToMjpeg(process.env.RTSP_URL);
-  }
+  if (!ff && RTSP_URL) ff = startRtspToMjpeg(RTSP_URL, RTSP_USER, RTSP_PASS);
 });
 
 // ─────────────────────────────────────────────────────────────
