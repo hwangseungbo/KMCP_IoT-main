@@ -149,12 +149,16 @@ try {
 // 6) FFmpeg → WS 브로드캐스트 (단일 프로세스, 첫 접속 시 기동)
 let ff = null;
 
-function buildRtspUrlWithAuth(baseUrl, user, pass) {
-  if (!user || !pass) return baseUrl;
+function buildRtspUrlWithAuthAndTimeout(baseUrl, user, pass, timeoutUs) {
   const u = new URL(baseUrl);
-  // 비밀번호 등 특수문자 안전 처리
-  u.username = encodeURIComponent(user);
-  u.password = encodeURIComponent(pass);
+  if (user) u.username = encodeURIComponent(user);
+  if (pass) u.password = encodeURIComponent(pass);
+  if (timeoutUs) {
+    // 이미 timeout이 없다면 추가
+    if (!u.searchParams.has("timeout")) {
+      u.searchParams.set("timeout", String(timeoutUs));
+    }
+  }
   return u.toString();
 }
 
@@ -166,11 +170,21 @@ function startRtspToMjpeg(rtspUrl, user, pass) {
     return null;
   }
 
-  const urlWithAuth = buildRtspUrlWithAuth(rtspUrl, user, pass);
+  // 15초 연결 타임아웃을 URL로 전달
+  const urlWithAuth = buildRtspUrlWithAuthAndTimeout(
+    rtspUrl,
+    user,
+    pass,
+    15000000
+  );
 
   const args = [
     "-rtsp_transport",
-    "tcp", // NAT/방화벽 환경에서 안정
+    "tcp",
+    // ↓ 문제 옵션들 제거
+    // '-rw_timeout','15000000',
+    // '-stimeout','15000000',
+    // ↑ 위 둘은 빌드/프로토콜에 따라 미지원. URL ?timeout 으로 대체
     "-probesize",
     "10M",
     "-analyzeduration",
@@ -195,6 +209,7 @@ function startRtspToMjpeg(rtspUrl, user, pass) {
 
   console.log("FFmpeg args:", args.join(" "));
   const proc = spawn("ffmpeg", args, { stdio: ["ignore", "pipe", "pipe"] });
+
   proc.stdout.on("data", (chunk) => {
     wss.clients.forEach((c) => {
       if (c.readyState === WebSocket.OPEN) c.send(chunk);
@@ -209,7 +224,7 @@ function startRtspToMjpeg(rtspUrl, user, pass) {
   return proc;
 }
 
-// 호출부도 캐시변수로 전달
+// 호출부(캐시 변수 사용)
 const RTSP_URL = (process.env.RTSP_URL || "").trim();
 const RTSP_USER = (process.env.RTSP_USER || "").trim();
 const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
@@ -233,30 +248,6 @@ wss.on("connection", () => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`HTTP/WS 서버가 0.0.0.0:${PORT} 에서 실행 중입니다.`);
-
-  // 1) 원시 env 그대로 확인
-  console.log("[ENV CHECK/raw] CWD=", process.cwd());
-  console.log(
-    "[ENV CHECK/raw] RTSP_URL=",
-    JSON.stringify(process.env.RTSP_URL)
-  );
-  console.log(
-    "[ENV CHECK/raw] RTSP_USER/PASS len=",
-    (process.env.RTSP_USER || "").length,
-    (process.env.RTSP_PASS || "").length
-  );
-
-  // 2) 공백/개행 제거하여 캐싱
-  const RTSP_URL = (process.env.RTSP_URL || "").trim();
-  const RTSP_USER = (process.env.RTSP_USER || "").trim();
-  const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
-
-  console.log("[ENV CHECK/trim] RTSP_URL len=", RTSP_URL.length);
-  console.log(
-    "[ENV CHECK/trim] RTSP_USER/PASS len=",
-    RTSP_USER.length,
-    RTSP_PASS.length
-  );
 
   if (!RTSP_URL) {
     console.warn(
