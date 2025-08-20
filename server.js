@@ -187,12 +187,14 @@ function startRtspToMjpeg(wss) {
     "-f",
     "mjpeg",
     "-q:v",
-    "10",
+    "5", // 높은 품질 (10 → 5)
     "-r",
-    "2",
+    "15", // 높은 프레임 레이트 (2 → 15)
     "-vf",
     "scale=640:360",
     "-an",
+    "-preset",
+    "ultrafast", // 인코딩 속도 최적화
     "pipe:1",
   ];
   console.log("FFmpeg args:", args.join(" "));
