@@ -152,30 +152,25 @@ try {
 const RTSP_HOST = (process.env.RTSP_HOST || "223.171.72.233").trim();
 const RTSP_PORT = (process.env.RTSP_PORT || "10554").trim();
 const RTSP_PATH = (process.env.RTSP_PATH || "/profile2/media.smp").trim();
-const RTSP_USER = (process.env.RTSP_USER || "").trim();
-const RTSP_PASS = (process.env.RTSP_PASS || "").trim();
+const RTSP_USER = (process.env.RTSP_USER || "admin").trim();
+const RTSP_PASS = (process.env.RTSP_PASS || "kmcp123!").trim();
 
-// ── URL 생성(인증+timeout) ──────────────────────────────
-function buildRtspUrlWithAuthAndTimeout(
-  host,
-  port,
-  path,
-  user,
-  pass,
-  timeoutUs = 15000000
-) {
+// ── URL 생성(인증만, timeout 제거) ──────────────────────────────
+function buildRtspUrlWithAuth(host, port, path, user, pass) {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  const u = new URL(`rtsp://${host}:${port}${cleanPath}`);
-  if (user) u.username = encodeURIComponent(user);
-  if (pass) u.password = encodeURIComponent(pass);
-  if (!u.searchParams.has("timeout"))
-    u.searchParams.set("timeout", String(timeoutUs));
-  return u.toString(); // <- 여기서 ! 가 %21 로 변환됨
+
+  let url = `rtsp://`;
+  if (user && pass) {
+    url += `${user}:${pass}@`;
+  }
+  url += `${host}:${port}${cleanPath}`;
+
+  return url;
 }
 
 let ff = null;
 function startRtspToMjpeg(wss) {
-  const finalRtsp = buildRtspUrlWithAuthAndTimeout(
+  const finalRtsp = buildRtspUrlWithAuth(
     RTSP_HOST,
     RTSP_PORT,
     RTSP_PATH,
@@ -187,16 +182,8 @@ function startRtspToMjpeg(wss) {
   const args = [
     "-rtsp_transport",
     "tcp",
-    "-probesize",
-    "10M",
-    "-analyzeduration",
-    "10M",
     "-i",
-    finalRtsp, // 오직 finalRtsp 만 사용!
-    "-fflags",
-    "nobuffer",
-    "-flags",
-    "low_delay",
+    finalRtsp,
     "-f",
     "mjpeg",
     "-q:v",
@@ -255,13 +242,12 @@ async function tryProbe(url) {
 
 async function autoDiscoverRtsp(host, port, user, pass, paths) {
   for (const p of paths) {
-    const base = new URL(
-      `rtsp://${host}:${port}${p.startsWith("/") ? p : `/${p}`}`
-    );
-    if (user) base.username = encodeURIComponent(user);
-    if (pass) base.password = encodeURIComponent(pass);
-    base.searchParams.set("timeout", "15000000");
-    const url = base.toString();
+    let url = `rtsp://`;
+    if (user && pass) {
+      url += `${user}:${pass}@`;
+    }
+    url += `${host}:${port}${p.startsWith("/") ? p : `/${p}`}`;
+
     const r = await tryProbe(url);
     console.log("[PROBE]", p, r.ok ? "OK" : `FAIL: ${r.err}`);
     if (r.ok) return url;
@@ -279,14 +265,22 @@ async function autoDiscoverRtsp(host, port, user, pass, paths) {
     "/h264/ch1/main/av_stream",
     "/h264",
   ];
-  const found = await autoDiscoverRtsp(
-    process.env.RTSP_HOST,
-    process.env.RTSP_PORT,
-    process.env.RTSP_USER,
-    process.env.RTSP_PASS,
-    paths
-  );
-  console.log("[PROBE] FOUND =", found);
+
+  // 환경 변수 기본값 설정
+  const host = process.env.RTSP_HOST || "223.171.72.233";
+  const port = process.env.RTSP_PORT || "10554";
+  const user = process.env.RTSP_USER || "";
+  const pass = process.env.RTSP_PASS || "";
+
+  // 환경 변수가 설정된 경우에만 실행
+  if (host && port) {
+    const found = await autoDiscoverRtsp(host, port, user, pass, paths);
+    console.log("[PROBE] FOUND =", found);
+  } else {
+    console.log(
+      "[PROBE] RTSP 환경 변수가 설정되지 않아 자동 스캔을 건너뜁니다."
+    );
+  }
 })();
 
 // 첫 연결 때만 ffmpeg 기동
