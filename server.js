@@ -22,6 +22,7 @@ const server = http.createServer(app);
 app.use(
   cors({
     origin: [
+      "http://192.168.0.58:3000",
       "http://localhost:3000",
       "http://localhost:5173",
       "https://iot-client-iota.vercel.app",
@@ -130,6 +131,9 @@ try {
 } catch {}
 try {
   app.use("/api/ships", require("./routes/ships.js"));
+} catch {}
+try {
+  app.use("/ships", require("./routes/logs.js"));
 } catch {}
 
 // 404
