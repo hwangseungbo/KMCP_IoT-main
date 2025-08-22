@@ -24,10 +24,10 @@ router.get("", async (req, res) => {
   let result = await db
     .collection("telemetry")
     .find() // 조건 없이 모든 문서를 검색
-    .sort({ createdAt: -1 }) // 최신 데이터를 기준으로 내림차순 정렬
+    .sort({ ts: -1 }) // 최신 데이터를 기준으로 내림차순 정렬
     .limit(1) // 가장 최신 데이터 1개만 가져옴
     .toArray();
-  result[0].createdAt = "2024-11-27T14:30:07.892Z";
+  // result[0].createdAt = "2024-11-27T14:30:07.892Z";
   console.log(result);
 
   res.json(result);
